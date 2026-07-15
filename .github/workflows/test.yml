@@ -48,7 +48,7 @@ jobs:
         run: |
           uv sync --extra dev --extra presidio
           uv pip install pip
-          uv run python -m spacy download en_core_web_trf
+          uv run python -m spacy download en_core_web_sm
 
       - name: Run all tests
         run: uv run pytest tests/ -v
