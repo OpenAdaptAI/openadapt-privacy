@@ -314,6 +314,17 @@ class TestScrubAdmissionAndEvidence:
             )
         assert config.SCRUB_KEYS_HTML == original
 
+    def test_successful_scrub_restores_public_config_object_identity(self) -> None:
+        keys = config.SCRUB_KEYS_HTML
+        nlp_config = config.SCRUB_CONFIG_TRF
+
+        Recording(task_description="Patient John Smith").scrub(
+            _TextStubScrubber(), scrub_images=False
+        )
+
+        assert config.SCRUB_KEYS_HTML is keys
+        assert config.SCRUB_CONFIG_TRF is nlp_config
+
     def test_completed_scrub_attaches_policy_and_version_provenance(self) -> None:
         recording = Recording(task_description="Patient John Smith")
 

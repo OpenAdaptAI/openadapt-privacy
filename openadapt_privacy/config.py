@@ -169,13 +169,13 @@ def privacy_operation() -> Iterator[PrivacyConfig]:
     # policies and still receive completed evidence.
     with _operation_lock:
         snapshot = deepcopy(config)
-        global_values = {name: deepcopy(value) for name, value in asdict(config).items()}
+        global_values = {name: getattr(config, name) for name in asdict(config)}
         for name, value in asdict(snapshot).items():
             object.__setattr__(snapshot, name, _freeze_policy_value(value))
         object.__setattr__(snapshot, "_policy_locked", True)
 
         for name, value in global_values.items():
-            object.__setattr__(config, name, _freeze_policy_value(value))
+            object.__setattr__(config, name, _freeze_policy_value(deepcopy(value)))
         object.__setattr__(config, "_policy_locked", True)
 
         token = _operation_config.set(snapshot)
