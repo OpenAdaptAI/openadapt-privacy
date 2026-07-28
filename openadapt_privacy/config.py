@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-from typing import Sequence
+from typing import Iterator, Sequence
 
 
 @dataclass
@@ -91,3 +94,24 @@ class PrivacyConfig:
 
 # Global default configuration instance
 config = PrivacyConfig()
+
+_operation_config: ContextVar[PrivacyConfig | None] = ContextVar(
+    "openadapt_privacy_operation_config",
+    default=None,
+)
+
+
+def effective_config() -> PrivacyConfig:
+    """Return the immutable-per-operation policy, or the process default."""
+    return _operation_config.get() or config
+
+
+@contextmanager
+def privacy_operation() -> Iterator[PrivacyConfig]:
+    """Bind one deep-copied policy snapshot for a complete scrub operation."""
+    snapshot = deepcopy(config)
+    token = _operation_config.set(snapshot)
+    try:
+        yield snapshot
+    finally:
+        _operation_config.reset(token)

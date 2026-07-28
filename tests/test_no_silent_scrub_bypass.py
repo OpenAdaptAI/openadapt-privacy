@@ -19,11 +19,10 @@ from PIL import Image
 import openadapt_privacy
 from openadapt_privacy.base import (
     Modality,
-    ScrubbingPolicyChanged,
     ScrubbingProvider,
     ScrubbingProviderUnavailable,
 )
-from openadapt_privacy.config import config
+from openadapt_privacy.config import config, effective_config
 from openadapt_privacy.loaders import Action, Recording, Screenshot, UnscrubbedScreenshot
 from openadapt_privacy.providers import presidio
 
@@ -80,7 +79,8 @@ class _UnavailableTextScrubber(_TextStubScrubber):
 class _PolicyMutatingScrubber(_TextStubScrubber):
     def scrub_text(self, text: str, is_separated: bool = False) -> str:
         config.SCRUB_CHAR = "!" if config.SCRUB_CHAR != "!" else "#"
-        return super().scrub_text(text, is_separated=is_separated)
+        self.calls += 1
+        return effective_config().SCRUB_CHAR * len(text)
 
 
 class TestPackageRootExports:
@@ -287,13 +287,15 @@ class TestScrubAdmissionAndEvidence:
             "PHONE_NUMBER",
         ]
 
-    def test_policy_change_during_scrub_discards_the_result(self) -> None:
+    def test_policy_change_during_scrub_cannot_change_operation_snapshot(self) -> None:
         original = config.SCRUB_CHAR
+        original_digest = config.policy_digest()
         try:
-            with pytest.raises(ScrubbingPolicyChanged):
-                Recording(task_description="Patient John Smith").scrub(
-                    _PolicyMutatingScrubber(), scrub_images=False
-                )
+            scrubbed = Recording(task_description="Patient John Smith").scrub(
+                _PolicyMutatingScrubber(), scrub_images=False
+            )
+            assert scrubbed.task_description == original * len("Patient John Smith")
+            assert scrubbed.metadata["_openadapt_privacy"]["policy_sha256"] == original_digest
         finally:
             config.SCRUB_CHAR = original
 

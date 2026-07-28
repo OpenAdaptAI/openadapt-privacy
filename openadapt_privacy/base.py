@@ -13,7 +13,7 @@ from typing import Any, List, Optional
 from PIL import Image
 from pydantic import BaseModel
 
-from openadapt_privacy.config import config
+from openadapt_privacy.config import effective_config
 
 # Provider modules that must be imported before the subclass registry is read.
 # ``ScrubbingProvider.__subclasses__()`` only sees classes whose module has been
@@ -81,7 +81,7 @@ class ScrubbingProvider(BaseModel):
             "provider": self.name,
             "provider_class": f"{type(self).__module__}.{type(self).__qualname__}",
             "package_version": package_version,
-            "policy_sha256": policy_sha256 or config.policy_digest(),
+            "policy_sha256": policy_sha256 or effective_config().policy_digest(),
             "modalities": sorted(set(modalities)),
             "status": "completed",
         }
@@ -187,7 +187,7 @@ class TextScrubbingMixin:
         """
         if text is None:
             return None
-        return config.SCRUB_CHAR * len(text)
+        return effective_config().SCRUB_CHAR * len(text)
 
     def scrub_dict(
         self,
@@ -213,7 +213,7 @@ class TextScrubbingMixin:
             Scrubbed dictionary with PII/PHI removed.
         """
         if list_keys is None:
-            list_keys = config.SCRUB_KEYS_HTML
+            list_keys = effective_config().SCRUB_KEYS_HTML
 
         scrubbed_dict: dict[str, Any] = {}
         for key, value in input_dict.items():
