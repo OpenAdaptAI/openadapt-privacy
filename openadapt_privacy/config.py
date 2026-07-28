@@ -7,7 +7,9 @@ the global `config` instance.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field
 from typing import Sequence
 
 
@@ -75,6 +77,16 @@ class PrivacyConfig:
 
     # SpaCy model name
     SPACY_MODEL_NAME: str = "en_core_web_sm"
+
+    def policy_digest(self) -> str:
+        """Return a stable digest of the complete effective scrub policy."""
+        payload = json.dumps(
+            asdict(self),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
 
 # Global default configuration instance

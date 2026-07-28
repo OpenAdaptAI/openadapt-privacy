@@ -16,8 +16,13 @@ import pytest
 from PIL import Image
 
 import openadapt_privacy
-from openadapt_privacy.base import Modality, ScrubbingProvider
-from openadapt_privacy.loaders import Recording, Screenshot, UnscrubbedScreenshot
+from openadapt_privacy.base import (
+    Modality,
+    ScrubbingProvider,
+    ScrubbingProviderUnavailable,
+)
+from openadapt_privacy.config import config
+from openadapt_privacy.loaders import Action, Recording, Screenshot, UnscrubbedScreenshot
 
 
 def _run_in_fresh_interpreter(source: str) -> subprocess.CompletedProcess[str]:
@@ -39,10 +44,34 @@ class _StubScrubber(ScrubbingProvider):
     """Minimal image scrubber that proves redaction actually happened."""
 
     name: str = "stub"
-    capabilities: list[str] = [Modality.PIL_IMAGE]
+    capabilities: list[str] = [Modality.TEXT, Modality.PIL_IMAGE]
+
+    def scrub_text(self, text: str, is_separated: bool = False) -> str:
+        return text
+
+    def scrub_dict(self, input_dict: dict) -> dict:
+        return input_dict.copy()
 
     def scrub_image(self, image: Image.Image, fill_color: int | None = None) -> Image.Image:
         return Image.new("RGB", image.size, (0, 0, 0))
+
+
+class _TextStubScrubber(ScrubbingProvider):
+    name: str = "text-stub"
+    capabilities: list[str] = [Modality.TEXT]
+    calls: int = 0
+
+    def scrub_text(self, text: str, is_separated: bool = False) -> str:
+        self.calls += 1
+        return "<redacted>"
+
+    def scrub_dict(self, input_dict: dict) -> dict:
+        return {}
+
+
+class _UnavailableTextScrubber(_TextStubScrubber):
+    def validate_ready(self, modalities: list[str]) -> None:
+        raise ScrubbingProviderUnavailable("dependency missing; no scrub was attempted")
 
 
 class TestPackageRootExports:
@@ -105,9 +134,7 @@ class TestScreenshotScrub:
 
         assert str(original) in str(excinfo.value)
 
-    def test_recording_scrub_raises_rather_than_returning_unscrubbed_paths(
-        self, tmp_path
-    ) -> None:
+    def test_recording_scrub_raises_rather_than_returning_unscrubbed_paths(self, tmp_path) -> None:
         original = tmp_path / "screenshot_001.png"
         Image.new("RGB", (4, 4), (255, 0, 0)).save(original)
         recording = Recording(
@@ -122,9 +149,7 @@ class TestScreenshotScrub:
         original = tmp_path / "screenshot_001.png"
         image = Image.new("RGB", (4, 4), (255, 0, 0))
         image.save(original)
-        screenshot = Screenshot(
-            id=1, action_id=1, timestamp=1.0, image=image, path=str(original)
-        )
+        screenshot = Screenshot(id=1, action_id=1, timestamp=1.0, image=image, path=str(original))
 
         scrubbed = screenshot.scrub(_StubScrubber())
 
@@ -141,3 +166,58 @@ class TestScreenshotScrub:
 
         assert scrubbed.image is None
         assert scrubbed.path is None
+
+    def test_text_only_scrub_omits_raw_screenshot_content(self, tmp_path) -> None:
+        original = tmp_path / "screenshot_001.png"
+        image = Image.new("RGB", (4, 4), (255, 0, 0))
+        image.save(original)
+        recording = Recording(
+            task_description="Patient John Smith",
+            screenshots=[
+                Screenshot(
+                    id=1,
+                    action_id=1,
+                    timestamp=1.0,
+                    image=image,
+                    path=str(original),
+                )
+            ],
+        )
+
+        scrubbed = recording.scrub(_TextStubScrubber(), scrub_images=False)
+
+        assert scrubbed.screenshots[0].image is None
+        assert scrubbed.screenshots[0].path is None
+        assert scrubbed.metadata["_openadapt_privacy"]["omitted_modalities"] == [Modality.PIL_IMAGE]
+
+
+class TestScrubAdmissionAndEvidence:
+    def test_dependency_failure_happens_before_source_processing(self) -> None:
+        scrubber = _UnavailableTextScrubber()
+        recording = Recording(
+            task_description="Patient John Smith",
+            actions=[Action(id=1, action_type="type", timestamp=1.0, text="secret")],
+        )
+
+        with pytest.raises(ScrubbingProviderUnavailable):
+            recording.scrub(scrubber, scrub_images=False)
+
+        assert scrubber.calls == 0
+
+    def test_completed_scrub_attaches_policy_and_version_provenance(self) -> None:
+        recording = Recording(task_description="Patient John Smith")
+
+        scrubbed = recording.scrub(_TextStubScrubber(), scrub_images=False)
+
+        evidence = scrubbed.metadata["_openadapt_privacy"]
+        assert evidence == {
+            "schema_version": 1,
+            "provider": "text-stub",
+            "provider_class": ("tests.test_no_silent_scrub_bypass._TextStubScrubber"),
+            "package_version": openadapt_privacy.__version__,
+            "policy_sha256": config.policy_digest(),
+            "modalities": [Modality.TEXT],
+            "status": "completed",
+            "omitted_modalities": [Modality.PIL_IMAGE],
+        }
+        assert "John Smith" not in repr(evidence)

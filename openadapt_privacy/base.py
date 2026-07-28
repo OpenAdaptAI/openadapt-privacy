@@ -7,6 +7,7 @@ PII/PHI scrubbing providers.
 from __future__ import annotations
 
 import importlib
+from importlib import metadata
 from typing import Any, List
 
 from PIL import Image
@@ -50,6 +51,31 @@ class ScrubbingProvider(BaseModel):
     capabilities: List[str]
 
     model_config = {"arbitrary_types_allowed": True}
+
+    def validate_ready(self, modalities: list[str]) -> None:
+        """Fail before processing when this provider cannot scrub a modality."""
+        unsupported = sorted(set(modalities) - set(self.capabilities))
+        if unsupported:
+            raise ScrubbingProviderUnavailable(
+                f"Provider {self.name!r} cannot scrub required modalities {unsupported}; "
+                "no scrub was attempted."
+            )
+
+    def evidence(self, modalities: list[str]) -> dict[str, Any]:
+        """Return privacy-safe provenance for a completed scrub operation."""
+        try:
+            package_version = metadata.version("openadapt-privacy")
+        except metadata.PackageNotFoundError:  # pragma: no cover - source checkout only
+            package_version = "unknown"
+        return {
+            "schema_version": 1,
+            "provider": self.name,
+            "provider_class": f"{type(self).__module__}.{type(self).__qualname__}",
+            "package_version": package_version,
+            "policy_sha256": config.policy_digest(),
+            "modalities": sorted(set(modalities)),
+            "status": "completed",
+        }
 
     def scrub_text(self, text: str, is_separated: bool = False) -> str:
         """Scrub PII/PHI from text.

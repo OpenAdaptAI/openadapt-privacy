@@ -195,12 +195,30 @@ class Recording:
         Returns:
             New Recording instance with all content scrubbed.
         """
+        required_modalities = ["TEXT"]
+        if scrub_images and self.screenshots:
+            required_modalities.append("PIL_IMAGE")
+        scrubber.validate_ready(required_modalities)
+
         scrubbed_actions = [action.scrub(scrubber) for action in self.actions]
         scrubbed_screenshots = (
             [screenshot.scrub(scrubber) for screenshot in self.screenshots]
             if scrub_images
-            else self.screenshots
+            else [
+                Screenshot(
+                    id=screenshot.id,
+                    action_id=screenshot.action_id,
+                    timestamp=screenshot.timestamp,
+                )
+                for screenshot in self.screenshots
+            ]
         )
+
+        scrubbed_metadata = scrubber.scrub_dict(self.metadata) if self.metadata else {}
+        scrubbed_metadata["_openadapt_privacy"] = {
+            **scrubber.evidence(required_modalities),
+            "omitted_modalities": [] if scrub_images else ["PIL_IMAGE"],
+        }
 
         return Recording(
             id=self.id,
@@ -210,7 +228,7 @@ class Recording:
             timestamp=self.timestamp,
             actions=scrubbed_actions,
             screenshots=scrubbed_screenshots,
-            metadata=scrubber.scrub_dict(self.metadata) if self.metadata else {},
+            metadata=scrubbed_metadata,
         )
 
     def iter_actions_with_screenshots(self) -> Iterator[tuple[Action, Optional[Screenshot]]]:

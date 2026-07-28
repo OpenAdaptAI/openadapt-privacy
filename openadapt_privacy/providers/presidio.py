@@ -206,6 +206,22 @@ class PresidioScrubbingProvider(ScrubbingProvider, TextScrubbingMixin):
     name: str = "PRESIDIO"
     capabilities: List[str] = [Modality.TEXT, Modality.PIL_IMAGE]
 
+    def validate_ready(self, modalities: list[str]) -> None:
+        """Validate every local dependency before any source content is read."""
+        super().validate_ready(modalities)
+        _ensure_spacy_model()
+        try:
+            import presidio_analyzer  # noqa: F401
+            import presidio_anonymizer  # noqa: F401
+
+            if Modality.PIL_IMAGE in modalities:
+                import presidio_image_redactor  # noqa: F401
+        except ImportError as exc:
+            raise PrivacyModelUnavailable(
+                "The configured Presidio scrubber is incomplete; no scrub was attempted. "
+                "Install it with: pip install 'openadapt-privacy[presidio]'"
+            ) from exc
+
     def scrub_text(self, text: str, is_separated: bool = False) -> str:
         """Scrub PII/PHI from text using Presidio.
 
