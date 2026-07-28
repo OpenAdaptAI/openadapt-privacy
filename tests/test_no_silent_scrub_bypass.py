@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import types
 from importlib import metadata
 
 import pytest
@@ -24,6 +25,7 @@ from openadapt_privacy.base import (
 )
 from openadapt_privacy.config import config
 from openadapt_privacy.loaders import Action, Recording, Screenshot, UnscrubbedScreenshot
+from openadapt_privacy.providers import presidio
 
 
 def _run_in_fresh_interpreter(source: str) -> subprocess.CompletedProcess[str]:
@@ -210,6 +212,80 @@ class TestScrubAdmissionAndEvidence:
             recording.scrub(scrubber, scrub_images=False)
 
         assert scrubber.calls == 0
+
+    def test_policy_change_invalidates_analyzer_derived_caches(self, monkeypatch) -> None:
+        old_digest = config.policy_digest()
+        monkeypatch.setattr(presidio, "_analyzer_policy_sha256", old_digest)
+        monkeypatch.setattr(presidio, "_analyzer_engine", object())
+        monkeypatch.setattr(presidio, "_image_redactor_engine", object())
+        monkeypatch.setattr(presidio, "_scrubbing_entities", ["EMAIL_ADDRESS"])
+        monkeypatch.setattr(
+            config,
+            "SCRUB_PRESIDIO_IGNORE_ENTITIES",
+            [*config.SCRUB_PRESIDIO_IGNORE_ENTITIES, "EMAIL_ADDRESS"],
+        )
+        new_digest = config.policy_digest()
+        assert new_digest != old_digest
+
+        presidio._invalidate_policy_bound_caches(new_digest)
+
+        assert presidio._analyzer_policy_sha256 == new_digest
+        assert presidio._analyzer_engine is None
+        assert presidio._image_redactor_engine is None
+        assert presidio._scrubbing_entities is None
+
+    def test_tightened_policy_rebuilds_entities_before_second_scrub(self, monkeypatch) -> None:
+        class FakeRegistry:
+            def add_recognizer(self, _recognizer) -> None:
+                return None
+
+        class FakeAnalyzerEngine:
+            def __init__(self, **_kwargs) -> None:
+                self.registry = FakeRegistry()
+
+            def get_supported_entities(self) -> list[str]:
+                return ["EMAIL_ADDRESS", "PHONE_NUMBER"]
+
+        class FakeNlpEngineProvider:
+            def __init__(self, **_kwargs) -> None:
+                pass
+
+            def create_engine(self) -> object:
+                return object()
+
+        monkeypatch.setitem(
+            sys.modules,
+            "presidio_analyzer",
+            types.SimpleNamespace(AnalyzerEngine=FakeAnalyzerEngine),
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "presidio_analyzer.nlp_engine",
+            types.SimpleNamespace(NlpEngineProvider=FakeNlpEngineProvider),
+        )
+        monkeypatch.setattr(presidio, "_ensure_spacy_model", lambda: None)
+        monkeypatch.setattr(presidio, "_register_phi_recognizers", lambda _engine: None)
+        monkeypatch.setattr(presidio, "_analyzer_engine", None)
+        monkeypatch.setattr(presidio, "_image_redactor_engine", None)
+        monkeypatch.setattr(presidio, "_scrubbing_entities", None)
+        monkeypatch.setattr(presidio, "_analyzer_policy_sha256", None)
+
+        monkeypatch.setattr(
+            config,
+            "SCRUB_PRESIDIO_IGNORE_ENTITIES",
+            ["EMAIL_ADDRESS"],
+        )
+        first_engine = presidio._get_analyzer_engine()
+        assert presidio._get_scrubbing_entities() == ["PHONE_NUMBER"]
+
+        monkeypatch.setattr(config, "SCRUB_PRESIDIO_IGNORE_ENTITIES", [])
+        second_engine = presidio._get_analyzer_engine()
+
+        assert second_engine is not first_engine
+        assert presidio._get_scrubbing_entities() == [
+            "EMAIL_ADDRESS",
+            "PHONE_NUMBER",
+        ]
 
     def test_policy_change_during_scrub_discards_the_result(self) -> None:
         original = config.SCRUB_CHAR

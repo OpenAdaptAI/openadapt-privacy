@@ -46,6 +46,20 @@ _analyzer_engine = None
 _anonymizer_engine = None
 _image_redactor_engine = None
 _scrubbing_entities = None
+_analyzer_policy_sha256 = None
+
+
+def _invalidate_policy_bound_caches(current_policy_sha256: str) -> None:
+    """Discard analyzer-derived state when the effective policy changes."""
+    global _analyzer_engine, _analyzer_policy_sha256, _image_redactor_engine
+    global _scrubbing_entities
+
+    if _analyzer_policy_sha256 == current_policy_sha256:
+        return
+    _analyzer_engine = None
+    _image_redactor_engine = None
+    _scrubbing_entities = None
+    _analyzer_policy_sha256 = current_policy_sha256
 
 
 def _ensure_spacy_model() -> None:
@@ -132,6 +146,7 @@ def _get_analyzer_engine():
     # Revalidate on every access so a cached analyzer cannot mask a later,
     # operator-controlled configuration change.
     _ensure_spacy_model()
+    _invalidate_policy_bound_caches(config.policy_digest())
     if _analyzer_engine is None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
