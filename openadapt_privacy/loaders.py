@@ -35,7 +35,8 @@ from typing import Any, Iterator, List, Optional
 
 from PIL import Image
 
-from openadapt_privacy.base import ScrubbingProvider
+from openadapt_privacy.base import ScrubbingPolicyChanged, ScrubbingProvider
+from openadapt_privacy.config import config
 
 
 class UnscrubbedScreenshot(RuntimeError):
@@ -195,11 +196,15 @@ class Recording:
         Returns:
             New Recording instance with all content scrubbed.
         """
+        policy_sha256 = config.policy_digest()
         required_modalities = ["TEXT"]
         if scrub_images and self.screenshots:
             required_modalities.append("PIL_IMAGE")
         scrubber.validate_ready(required_modalities)
 
+        scrubbed_task_description = (
+            scrubber.scrub_text(self.task_description) if self.task_description else None
+        )
         scrubbed_actions = [action.scrub(scrubber) for action in self.actions]
         scrubbed_screenshots = (
             [screenshot.scrub(scrubber) for screenshot in self.screenshots]
@@ -215,16 +220,19 @@ class Recording:
         )
 
         scrubbed_metadata = scrubber.scrub_dict(self.metadata) if self.metadata else {}
+        if config.policy_digest() != policy_sha256:
+            raise ScrubbingPolicyChanged(
+                "The effective privacy policy changed while scrubbing. The mixed-policy "
+                "result was discarded; retry from the original inside one policy snapshot."
+            )
         scrubbed_metadata["_openadapt_privacy"] = {
-            **scrubber.evidence(required_modalities),
+            **scrubber.evidence(required_modalities, policy_sha256=policy_sha256),
             "omitted_modalities": [] if scrub_images else ["PIL_IMAGE"],
         }
 
         return Recording(
             id=self.id,
-            task_description=(
-                scrubber.scrub_text(self.task_description) if self.task_description else None
-            ),
+            task_description=scrubbed_task_description,
             timestamp=self.timestamp,
             actions=scrubbed_actions,
             screenshots=scrubbed_screenshots,

@@ -18,6 +18,7 @@ from PIL import Image
 import openadapt_privacy
 from openadapt_privacy.base import (
     Modality,
+    ScrubbingPolicyChanged,
     ScrubbingProvider,
     ScrubbingProviderUnavailable,
 )
@@ -72,6 +73,12 @@ class _TextStubScrubber(ScrubbingProvider):
 class _UnavailableTextScrubber(_TextStubScrubber):
     def validate_ready(self, modalities: list[str]) -> None:
         raise ScrubbingProviderUnavailable("dependency missing; no scrub was attempted")
+
+
+class _PolicyMutatingScrubber(_TextStubScrubber):
+    def scrub_text(self, text: str, is_separated: bool = False) -> str:
+        config.SCRUB_CHAR = "!" if config.SCRUB_CHAR != "!" else "#"
+        return super().scrub_text(text, is_separated=is_separated)
 
 
 class TestPackageRootExports:
@@ -203,6 +210,16 @@ class TestScrubAdmissionAndEvidence:
             recording.scrub(scrubber, scrub_images=False)
 
         assert scrubber.calls == 0
+
+    def test_policy_change_during_scrub_discards_the_result(self) -> None:
+        original = config.SCRUB_CHAR
+        try:
+            with pytest.raises(ScrubbingPolicyChanged):
+                Recording(task_description="Patient John Smith").scrub(
+                    _PolicyMutatingScrubber(), scrub_images=False
+                )
+        finally:
+            config.SCRUB_CHAR = original
 
     def test_completed_scrub_attaches_policy_and_version_provenance(self) -> None:
         recording = Recording(task_description="Patient John Smith")

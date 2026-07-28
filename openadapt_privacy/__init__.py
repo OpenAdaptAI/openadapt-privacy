@@ -6,6 +6,7 @@ from typing import Any
 
 from openadapt_privacy.base import (
     Modality,
+    ScrubbingPolicyChanged,
     ScrubbingProvider,
     ScrubbingProviderFactory,
     ScrubbingProviderUnavailable,
@@ -79,11 +80,13 @@ def __dir__() -> list[str]:
     """Return the package attribute names, including lazy re-exports."""
     return sorted(set(globals()) | set(_LAZY_EXPORTS))
 
+
 __all__ = [
     # Base classes
     "Modality",
     "ScrubbingProvider",
     "ScrubbingProviderFactory",
+    "ScrubbingPolicyChanged",
     "ScrubbingProviderUnavailable",
     "TextScrubbingMixin",
     # Config

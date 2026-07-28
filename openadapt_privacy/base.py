@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 from importlib import metadata
-from typing import Any, List
+from typing import Any, List, Optional
 
 from PIL import Image
 from pydantic import BaseModel
@@ -30,6 +30,10 @@ class ScrubbingProviderUnavailable(RuntimeError):
     requested modality". A caller must never read a provider load failure as an
     empty capability set and continue with unscrubbed data.
     """
+
+
+class ScrubbingPolicyChanged(RuntimeError):
+    """The effective privacy policy changed while a scrub was running."""
 
 
 class Modality:
@@ -61,7 +65,12 @@ class ScrubbingProvider(BaseModel):
                 "no scrub was attempted."
             )
 
-    def evidence(self, modalities: list[str]) -> dict[str, Any]:
+    def evidence(
+        self,
+        modalities: list[str],
+        *,
+        policy_sha256: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Return privacy-safe provenance for a completed scrub operation."""
         try:
             package_version = metadata.version("openadapt-privacy")
@@ -72,7 +81,7 @@ class ScrubbingProvider(BaseModel):
             "provider": self.name,
             "provider_class": f"{type(self).__module__}.{type(self).__qualname__}",
             "package_version": package_version,
-            "policy_sha256": config.policy_digest(),
+            "policy_sha256": policy_sha256 or config.policy_digest(),
             "modalities": sorted(set(modalities)),
             "status": "completed",
         }
