@@ -22,7 +22,7 @@ from openadapt_privacy.base import (
     ScrubbingProvider,
     ScrubbingProviderUnavailable,
 )
-from openadapt_privacy.config import config, effective_config
+from openadapt_privacy.config import ScrubbingPolicyChanged, config
 from openadapt_privacy.loaders import Action, Recording, Screenshot, UnscrubbedScreenshot
 from openadapt_privacy.providers import presidio
 
@@ -80,7 +80,13 @@ class _PolicyMutatingScrubber(_TextStubScrubber):
     def scrub_text(self, text: str, is_separated: bool = False) -> str:
         config.SCRUB_CHAR = "!" if config.SCRUB_CHAR != "!" else "#"
         self.calls += 1
-        return effective_config().SCRUB_CHAR * len(text)
+        return config.SCRUB_CHAR * len(text)
+
+
+class _MutablePolicyScrubber(_TextStubScrubber):
+    def scrub_text(self, text: str, is_separated: bool = False) -> str:
+        config.SCRUB_KEYS_HTML.append("secret_extension")
+        return text
 
 
 class TestPackageRootExports:
@@ -287,17 +293,26 @@ class TestScrubAdmissionAndEvidence:
             "PHONE_NUMBER",
         ]
 
-    def test_policy_change_during_scrub_cannot_change_operation_snapshot(self) -> None:
+    def test_legacy_provider_cannot_mutate_global_policy_during_scrub(self) -> None:
         original = config.SCRUB_CHAR
         original_digest = config.policy_digest()
         try:
-            scrubbed = Recording(task_description="Patient John Smith").scrub(
-                _PolicyMutatingScrubber(), scrub_images=False
-            )
-            assert scrubbed.task_description == original * len("Patient John Smith")
-            assert scrubbed.metadata["_openadapt_privacy"]["policy_sha256"] == original_digest
+            with pytest.raises(ScrubbingPolicyChanged):
+                Recording(task_description="Patient John Smith").scrub(
+                    _PolicyMutatingScrubber(), scrub_images=False
+                )
+            assert config.SCRUB_CHAR == original
+            assert config.policy_digest() == original_digest
         finally:
             config.SCRUB_CHAR = original
+
+    def test_legacy_provider_cannot_mutate_nested_policy_during_scrub(self) -> None:
+        original = list(config.SCRUB_KEYS_HTML)
+        with pytest.raises(ScrubbingPolicyChanged):
+            Recording(task_description="Patient John Smith").scrub(
+                _MutablePolicyScrubber(), scrub_images=False
+            )
+        assert config.SCRUB_KEYS_HTML == original
 
     def test_completed_scrub_attaches_policy_and_version_provenance(self) -> None:
         recording = Recording(task_description="Patient John Smith")

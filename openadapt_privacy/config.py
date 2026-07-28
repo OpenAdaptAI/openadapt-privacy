@@ -13,7 +13,49 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
+from threading import RLock
 from typing import Iterator, Sequence
+
+
+class ScrubbingPolicyChanged(RuntimeError):
+    """A scrubber attempted to mutate policy during a scrub operation."""
+
+
+class _FrozenList(list):
+    """List-compatible policy value that refuses in-operation mutation."""
+
+    def _refuse(self, *_args, **_kwargs) -> None:
+        raise ScrubbingPolicyChanged("privacy policy is immutable during a scrub operation")
+
+    __setitem__ = __delitem__ = append = clear = extend = insert = pop = remove = reverse = sort = (
+        _refuse
+    )
+    __iadd__ = __imul__ = _refuse
+
+    def __deepcopy__(self, _memo):
+        return self
+
+
+class _FrozenDict(dict):
+    """Dict-compatible policy value that refuses in-operation mutation."""
+
+    def _refuse(self, *_args, **_kwargs) -> None:
+        raise ScrubbingPolicyChanged("privacy policy is immutable during a scrub operation")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = _refuse
+
+    def __deepcopy__(self, _memo):
+        return self
+
+
+def _freeze_policy_value(value):
+    if isinstance(value, dict):
+        return _FrozenDict({key: _freeze_policy_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return _FrozenList(_freeze_policy_value(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze_policy_value(item) for item in value)
+    return value
 
 
 @dataclass
@@ -81,6 +123,11 @@ class PrivacyConfig:
     # SpaCy model name
     SPACY_MODEL_NAME: str = "en_core_web_sm"
 
+    def __setattr__(self, name: str, value) -> None:
+        if self.__dict__.get("_policy_locked", False) and not name.startswith("_"):
+            raise ScrubbingPolicyChanged("privacy policy is immutable during a scrub operation")
+        object.__setattr__(self, name, value)
+
     def policy_digest(self) -> str:
         """Return a stable digest of the complete effective scrub policy."""
         payload = json.dumps(
@@ -94,6 +141,8 @@ class PrivacyConfig:
 
 # Global default configuration instance
 config = PrivacyConfig()
+
+_operation_lock = RLock()
 
 _operation_config: ContextVar[PrivacyConfig | None] = ContextVar(
     "openadapt_privacy_operation_config",
@@ -109,9 +158,31 @@ def effective_config() -> PrivacyConfig:
 @contextmanager
 def privacy_operation() -> Iterator[PrivacyConfig]:
     """Bind one deep-copied policy snapshot for a complete scrub operation."""
-    snapshot = deepcopy(config)
-    token = _operation_config.set(snapshot)
-    try:
-        yield snapshot
-    finally:
-        _operation_config.reset(token)
+    existing = _operation_config.get()
+    if existing is not None:
+        yield existing
+        return
+
+    # Serialize policy admission. During the operation both the explicit
+    # snapshot and the legacy public ``config`` object are read-compatible but
+    # mutation-proof, so older third-party providers cannot silently mix two
+    # policies and still receive completed evidence.
+    with _operation_lock:
+        snapshot = deepcopy(config)
+        global_values = {name: deepcopy(value) for name, value in asdict(config).items()}
+        for name, value in asdict(snapshot).items():
+            object.__setattr__(snapshot, name, _freeze_policy_value(value))
+        object.__setattr__(snapshot, "_policy_locked", True)
+
+        for name, value in global_values.items():
+            object.__setattr__(config, name, _freeze_policy_value(value))
+        object.__setattr__(config, "_policy_locked", True)
+
+        token = _operation_config.set(snapshot)
+        try:
+            yield snapshot
+        finally:
+            _operation_config.reset(token)
+            object.__setattr__(config, "_policy_locked", False)
+            for name, value in global_values.items():
+                object.__setattr__(config, name, value)

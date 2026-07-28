@@ -6,13 +6,12 @@ from typing import Any
 
 from openadapt_privacy.base import (
     Modality,
-    ScrubbingPolicyChanged,
     ScrubbingProvider,
     ScrubbingProviderFactory,
     ScrubbingProviderUnavailable,
     TextScrubbingMixin,
 )
-from openadapt_privacy.config import PrivacyConfig, config
+from openadapt_privacy.config import PrivacyConfig, ScrubbingPolicyChanged, config
 from openadapt_privacy.loaders import (
     Action,
     DictRecordingLoader,

@@ -32,10 +32,6 @@ class ScrubbingProviderUnavailable(RuntimeError):
     """
 
 
-class ScrubbingPolicyChanged(RuntimeError):
-    """The effective privacy policy changed while a scrub was running."""
-
-
 class Modality:
     """Supported modality types for scrubbing."""
 
