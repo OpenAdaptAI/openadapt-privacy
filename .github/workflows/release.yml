@@ -44,6 +44,7 @@ jobs:
         if: steps.release.outputs.released == 'true'
         run: |
           uv build
+          python scripts/verify_release_artifacts.py
           python scripts/check_source_boundary.py --require-dist
 
       # v1.14.0 bundles twine 6.1.0 and packaging 25.0, which reject the

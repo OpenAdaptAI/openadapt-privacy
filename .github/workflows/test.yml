@@ -34,6 +34,7 @@ jobs:
         if: matrix.python-version == '3.12'
         run: |
           uv build
+          python scripts/verify_release_artifacts.py
           python scripts/check_source_boundary.py --require-dist
 
   test-presidio:

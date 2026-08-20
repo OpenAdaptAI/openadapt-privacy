@@ -1,19 +1,19 @@
 # openadapt-privacy
 
 > [!IMPORTANT]
-> **Status: Experimental.** The API is published on the 1.x version line, but
-> the PHI/PII detector is backed by synthetic regression evidence rather than
-> clinical validation. Scrubbing is one control in a reviewed egress process,
-> not a guarantee that an artifact is free of protected data.
+> **Lifecycle: Support.** `openadapt-privacy` is the current public privacy
+> dependency for OpenAdapt recording and artifact pipelines. Support identifies
+> its role in the stack. It does not create an additional OpenAdapt product
+> target or a separate Production claim.
 >
 > The OpenAdapt product is the demonstration compiler,
 > [`openadapt-flow`](https://github.com/OpenAdaptAI/openadapt-flow), installed
 > via the [`OpenAdapt`](https://github.com/OpenAdaptAI/OpenAdapt) launcher
 > (`pip install openadapt`): it compiles a demonstrated GUI workflow into a
 > deterministic, locally executable program. Healthy runs make no model calls,
-> and it halts instead of guessing when verification fails. Lifecycle labels for
-> every repository are in the
-> [repository lifecycle registry](https://github.com/OpenAdaptAI/.github/blob/main/REPOSITORY_LIFECYCLE.md).
+> and it halts instead of guessing when verification fails. The live admission
+> result for the seven OpenAdapt product targets is available from
+> [`openadapt.ai/status.json`](https://openadapt.ai/status.json).
 
 [![Build Status](https://github.com/OpenAdaptAI/openadapt-privacy/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/OpenAdaptAI/openadapt-privacy/actions)
 [![PyPI version](https://img.shields.io/pypi/v/openadapt-privacy.svg)](https://pypi.org/project/openadapt-privacy/)
@@ -38,14 +38,15 @@ OpenAdapt is a governed demonstration compiler: record a workflow once, compile
 the recording into a deterministic program, and replay that program with zero
 model calls on the healthy path. When the live screen does not match what was
 demonstrated it halts instead of guessing, using identity gates and independent
-effect verification. Every substrate is first-class: web and desktop recording
-are validated, RDP and Windows replay are early, and Citrix is exploratory.
+effect verification. Product status is derived from signed, expiring, and
+revocable release admissions. A current product release can execute only an
+exact workflow version that has its own active admission.
 
 | Package | Role |
 | --- | --- |
 | [`openadapt`](https://github.com/OpenAdaptAI/OpenAdapt) | Launcher and installer (`pip install openadapt`) |
-| [`openadapt-flow`](https://github.com/OpenAdaptAI/openadapt-flow) | Records, compiles, verifies, and replays workflows |
-| [`openadapt-capture`](https://github.com/OpenAdaptAI/openadapt-capture) | Cross-platform local desktop recording |
+| [`openadapt-flow`](https://github.com/OpenAdaptAI/openadapt-flow) | Normalizes demonstrations, then compiles, verifies, and replays workflows |
+| [`openadapt-capture`](https://github.com/OpenAdaptAI/openadapt-capture) | Canonical native screen, mouse, keyboard, timing, window, and media capture |
 | [`openadapt-types`](https://github.com/OpenAdaptAI/openadapt-types) | Canonical action and UI-state schema |
 | [`openadapt-grounding`](https://github.com/OpenAdaptAI/openadapt-grounding) | Local OCR text-anchoring plus optional model grounding |
 | **`openadapt-privacy`** | PHI/PII detection and redaction (this package) |
