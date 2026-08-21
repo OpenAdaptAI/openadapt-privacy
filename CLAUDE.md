@@ -1,5 +1,16 @@
 # Claude Code Instructions for openadapt-privacy
 
+## Project Status & Priorities
+
+**IMPORTANT**: Before starting work, always check the project-wide status document:
+- **Location**: `/Users/abrichr/oa/src/STATUS.md`
+- **Purpose**: Tracks P0 priorities, active background tasks, blockers, and strategic decisions
+- **Action**: Read this file at the start of every session to understand current priorities
+
+This ensures continuity between Claude Code sessions and context compactions.
+
+---
+
 ## Overview
 
 **openadapt-privacy** provides PII/PHI detection and redaction for GUI automation data. It protects sensitive information (emails, phone numbers, SSNs, credit cards, dates) in text, images, and nested dictionaries.
