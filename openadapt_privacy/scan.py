@@ -101,16 +101,28 @@ def _git_files(root: Path) -> list[Path] | None:
             ],
             check=True,
             capture_output=True,
+            # English messages, so the check below can read them.
+            env={**os.environ, "LC_ALL": "C"},
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+    # git skips a directory it can't read, warns, and still exits 0.
+    err = out.stderr.decode("utf-8", "replace")
+    if "could not open directory" in err or "Permission denied" in err:
+        raise PermissionError(err.strip())
     names = [n for n in out.stdout.split(b"\0") if n]
     return [root / n.decode("utf-8", "surrogateescape") for n in names]
 
 
+def _raise(exc: OSError) -> None:
+    raise exc
+
+
 def _walk_files(root: Path) -> list[Path]:
     files: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(root):
+    # Raise on an unreadable directory. Skipping it would report a clean scan
+    # of files that were never read.
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_raise):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_NAMES]
         for name in filenames:
             files.append(Path(dirpath) / name)
@@ -118,6 +130,11 @@ def _walk_files(root: Path) -> list[Path]:
 
 
 def iter_scan_files(root: Path) -> list[Path]:
+    """List the files to scan. Raise ``OSError`` if ``root`` can't be listed."""
+    if not root.exists():
+        raise FileNotFoundError(f"{root} does not exist")
+    if not root.is_dir():
+        raise NotADirectoryError(f"{root} is not a directory")
     tracked = _git_files(root)
     if tracked is not None:
         return [p for p in tracked if p.is_file()]
@@ -129,7 +146,9 @@ def _is_binary(path: Path) -> bool:
         with path.open("rb") as fh:
             chunk = fh.read(8192)
     except OSError:
-        return True
+        # Not binary as far as we know. scan_contents then reports it as
+        # unreadable instead of skipping it.
+        return False
     return b"\0" in chunk
 
 
@@ -172,9 +191,14 @@ def scan_contents(root: Path, files: list[Path]) -> list[str]:
     return hits
 
 
-def scan_tree(root: Path) -> list[str]:
-    """Return the same hit lines the clinic git scanner printed."""
-    files = iter_scan_files(root)
+def scan_tree(root: Path, files: list[Path] | None = None) -> list[str]:
+    """Return the same hit lines the clinic git scanner printed.
+
+    Raise ``OSError`` if ``root`` is missing, is not a directory, or has a
+    directory that can't be listed.
+    """
+    if files is None:
+        files = iter_scan_files(root)
     return scan_forbidden_paths(root, files) + scan_contents(root, files)
 
 
@@ -257,19 +281,49 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="tree to scan (default: current working directory)",
     )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="exit 0 when the tree has no files to scan (default: exit 2)",
+    )
     args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
+    # Exit 2 when the scan could not run, so CI can tell it apart from a
+    # finding (exit 1). A scan of nothing must never report clean.
     root = (args.root if args.root is not None else Path.cwd()).resolve()
-    hits = scan_tree(root)
+    if not root.is_dir():
+        print(
+            f"PHI scan error: root {root} does not exist or is not a directory. "
+            "Nothing was scanned.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        files = iter_scan_files(root)
+    except OSError as exc:
+        print(
+            f"PHI scan error: could not list files under {root}: {exc}. "
+            "Nothing was scanned.",
+            file=sys.stderr,
+        )
+        return 2
+    if not files and not args.allow_empty:
+        print(
+            f"PHI scan error: no files to scan under {root}. "
+            "Pass --allow-empty if an empty tree is expected.",
+            file=sys.stderr,
+        )
+        return 2
+    hits = scan_tree(root, files)
     if hits:
         print("PHI / clinic-path scan failed:", file=sys.stderr)
         for hit in hits:
             print(hit, file=sys.stderr)
         return 1
-    print(f"PHI scan clean ({len(iter_scan_files(root))} files)")
+    print(f"PHI scan clean ({len(files)} files)")
     return 0
 
 

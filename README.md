@@ -45,6 +45,14 @@ openadapt-privacy-scan --self-test
 openadapt-privacy-scan --root /path/to/repo
 ```
 
+The command exits with:
+
+- `0` when it read every file and no rule fired.
+- `1` when a rule fired or a file couldn't be read.
+- `2` when the scan couldn't run: the root is missing or isn't a directory, a
+  directory under it can't be listed, or it has no files. Pass `--allow-empty`
+  if an empty tree is expected.
+
 `[scan]` adds no packages. The scanner is stdlib, so `import openadapt_privacy.scan`
 works on a bare `pip install openadapt-privacy` and does not load Presidio,
 spaCy, or Pillow. `python -m openadapt_privacy.scan` is the same CLI.
