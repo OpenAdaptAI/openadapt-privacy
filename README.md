@@ -49,9 +49,9 @@ The command exits with:
 
 - `0` when it read every file and no rule fired.
 - `1` when a rule fired or a file couldn't be read.
-- `2` when the scan couldn't run: the root is missing or isn't a directory, a
-  directory under it can't be listed, or it has no files. Pass `--allow-empty`
-  if an empty tree is expected.
+- `2` when the scan couldn't run: the root is missing, isn't a directory, or
+  can't be accessed; a directory under it can't be listed; or it has no files.
+  Pass `--allow-empty` if an empty tree is expected.
 
 `[scan]` adds no packages. The scanner is stdlib, so `import openadapt_privacy.scan`
 works on a bare `pip install openadapt-privacy` and does not load Presidio,
@@ -64,6 +64,10 @@ from openadapt_privacy.scan import scan_tree, self_test
 hits = scan_tree(Path("."))   # ["ohip-dashed\tfile.txt:3", ...]
 self_test()                   # 0 ok, 1 a rule stayed silent
 ```
+
+`scan_tree` raises `OSError` when the root is missing, isn't a directory, or has
+a directory that can't be listed. It returns `[]` for a tree with no files, so
+check `iter_scan_files(root)` first if an empty tree should fail.
 
 `--self-test` plants fixtures under `/tmp` and exits 1 if a rule does not fire.
 Matching OHIP examples are not stored in the library; they're built at runtime.

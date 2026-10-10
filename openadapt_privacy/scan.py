@@ -13,6 +13,7 @@ Do not put a matching example in this file. Fixtures are built at runtime.
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import re
 import stat
@@ -106,10 +107,19 @@ def _git_files(root: Path) -> list[Path] | None:
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
-    # git skips a directory it can't read, warns, and still exits 0.
+    # git skips a directory it can't read, warns, and still exits 0, so treat a
+    # permission warning as a failed listing. git names paths in the tree
+    # relative to it. The exception is an absolute path, such as a global ignore
+    # file under an unreadable $HOME in a CI container: an ignore file git can't
+    # read hides no files.
     err = out.stderr.decode("utf-8", "replace")
-    if "could not open directory" in err or "Permission denied" in err:
-        raise PermissionError(err.strip())
+    for line in err.splitlines():
+        quoted = re.search(r"'([^']*)'", line)
+        outside = quoted is not None and os.path.isabs(quoted.group(1))
+        if "could not open directory" in line or (
+            "Permission denied" in line and not outside
+        ):
+            raise PermissionError(err.strip())
     names = [n for n in out.stdout.split(b"\0") if n]
     return [root / n.decode("utf-8", "surrogateescape") for n in names]
 
@@ -129,6 +139,20 @@ def _walk_files(root: Path) -> list[Path]:
     return files
 
 
+def _is_file(path: Path) -> bool:
+    """Return whether ``path`` is a regular file. Raise if it can't be checked.
+
+    ``Path.is_file()`` returns False on a permission error from Python 3.14, so
+    a file under a directory that can't be searched would drop out of the scan.
+    """
+    try:
+        return stat.S_ISREG(path.stat().st_mode)
+    except OSError as exc:
+        if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP):
+            return False
+        raise
+
+
 def iter_scan_files(root: Path) -> list[Path]:
     """List the files to scan. Raise ``OSError`` if ``root`` can't be listed."""
     if not root.exists():
@@ -137,8 +161,8 @@ def iter_scan_files(root: Path) -> list[Path]:
         raise NotADirectoryError(f"{root} is not a directory")
     tracked = _git_files(root)
     if tracked is not None:
-        return [p for p in tracked if p.is_file()]
-    return [p for p in _walk_files(root) if p.is_file()]
+        return [p for p in tracked if _is_file(p)]
+    return [p for p in _walk_files(root) if _is_file(p)]
 
 
 def _is_binary(path: Path) -> bool:
@@ -294,10 +318,11 @@ def main(argv: list[str] | None = None) -> int:
     # Exit 2 when the scan could not run, so CI can tell it apart from a
     # finding (exit 1). A scan of nothing must never report clean.
     root = (args.root if args.root is not None else Path.cwd()).resolve()
-    if not root.is_dir():
+    # os.path.isdir is False, not an exception, when a parent can't be searched.
+    if not os.path.isdir(root):
         print(
-            f"PHI scan error: root {root} does not exist or is not a directory. "
-            "Nothing was scanned.",
+            f"PHI scan error: root {root} does not exist, is not a directory, "
+            "or can't be accessed. Nothing was scanned.",
             file=sys.stderr,
         )
         return 2

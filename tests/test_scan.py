@@ -279,6 +279,75 @@ def test_cli_unreadable_subdirectory_fails_closed(
     assert "clean" not in captured.out + captured.err
 
 
+@pytest.mark.parametrize("use_git", [False, True], ids=["plain-dir", "git-repo"])
+def test_cli_unsearchable_subdirectory_fails_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], use_git: bool
+) -> None:
+    # Read but no execute permission: the names list, but the files can't be
+    # opened. Python 3.14's Path.is_file() returns False here instead of raising.
+    _skip_if_root_user()
+    if use_git:
+        _git_init(tmp_path)
+    (tmp_path / "ok.txt").write_text("hello\n", encoding="utf-8")
+    half = tmp_path / "half"
+    half.mkdir()
+    (half / "note.txt").write_text("hello\n", encoding="utf-8")
+    half.chmod(0o444)
+    try:
+        code = main(["--root", str(tmp_path)])
+    finally:
+        half.chmod(0o700)
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "could not list files" in captured.err
+    assert "clean" not in captured.out + captured.err
+
+
+def test_cli_root_under_unsearchable_parent_fails_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _skip_if_root_user()
+    locked = tmp_path / "locked"
+    root = locked / "sub"
+    root.mkdir(parents=True)
+    (root / "ok.txt").write_text("hello\n", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        code = main(["--root", str(root)])
+    finally:
+        locked.chmod(0o700)
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "can't be accessed" in captured.err
+    assert "clean" not in captured.out + captured.err
+
+
+def test_cli_unreadable_global_git_ignore_still_scans(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git warns "unable to access ...: Permission denied" for an unreadable
+    # global ignore file, but it still lists every file. That's not a failed scan.
+    _skip_if_root_user()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_init(repo)
+    (repo / "ok.txt").write_text("hello\n", encoding="utf-8")
+    home = tmp_path / "home"
+    ignore = home / ".config" / "git" / "ignore"
+    ignore.parent.mkdir(parents=True)
+    ignore.write_text("*.txt\n", encoding="utf-8")
+    ignore.chmod(0)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    try:
+        code = main(["--root", str(repo)])
+    finally:
+        ignore.chmod(0o600)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert "PHI scan clean (1 files)" in captured.out
+
+
 def test_cli_unreadable_file_is_a_finding(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
