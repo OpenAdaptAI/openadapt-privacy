@@ -12,10 +12,10 @@ trees, event payloads, and screenshots. Detection uses
 [Microsoft Presidio](https://github.com/microsoft/presidio) with a local spaCy
 model, and scrubbing runs on your machine.
 
-Use it if you record desktop or browser sessions for test automation, RPA, or
-training data. It also includes `openadapt-privacy-scan`, a CI check that needs
-no other packages and fails when a git tree holds health-data identifiers or
-recording files.
+Use it if you record desktop or browser sessions for test automation, robotic
+process automation (RPA), or training data. It also includes
+`openadapt-privacy-scan`, a CI check that runs without Presidio and fails when a
+repository holds health-data identifiers or recording files.
 
 ## Quick start
 
@@ -33,8 +33,8 @@ print(scrubber.scrub_text("Contact John Smith at john.smith@example.com or 555-1
 ```
 
 If the spaCy model or a Presidio package is missing, the scrubber raises
-`PrivacyModelUnavailable` or `ImportError` instead of returning text. It does
-not fall back to scrubbing less, and it never downloads a model at run time.
+`PrivacyModelUnavailable` or `ImportError` instead of returning text. It doesn't
+fall back to another model, and it never downloads a model at run time.
 
 You need Python 3.10 or later. Screenshot scrubbing also needs the
 [Tesseract](https://github.com/tesseract-ocr/tesseract) OCR binary on your
@@ -145,10 +145,12 @@ class SQLiteRecordingLoader(RecordingLoader):
 
 ## Block identifiers in CI
 
-`openadapt-privacy-scan` checks a git tree for health-data identifiers (Ontario
-health card numbers, chart IDs, and MRNs), remote-desktop hostnames, UNC
-paths, and recording, screenshot, or database files. It uses only the Python
-standard library, so the base package is enough:
+`openadapt-privacy-scan` checks the files in a directory for health-data
+identifiers (Ontario health card numbers, chart IDs, and MRNs), remote-desktop
+hostnames, UNC paths, and recording, screenshot, or database files. In a git
+repository it checks tracked files and untracked files that aren't ignored; it
+doesn't read the history. It uses only the Python standard library, so the base
+package is enough:
 
 ```bash
 pip install openadapt-privacy
@@ -175,7 +177,8 @@ hits = scan_tree(Path("."))   # for example ["mrn-assigned\tnotes.txt:3"]
 ```
 
 `openadapt_privacy/gitleaks.toml` and `openadapt_privacy/phi-patterns.txt`
-carry the same rules for gitleaks and git-secrets.
+carry the same text patterns for gitleaks and git-secrets. They don't include
+the file-type checks.
 
 ## Configuration
 
@@ -205,9 +208,11 @@ this package.
   one must be redacted with the right entity type. The data is synthetic, not
   clinical, so measure recall on your own data before you rely on it.
 - English only, with the `en_core_web_sm` spaCy model.
-- Detection depends on context. A card number that fails the Luhn check is still
-  redacted, but as `<DATE_TIME>` rather than `<CREDIT_CARD>`. Check placeholder
-  names against your data before you route on them.
+- Detection depends on context. A card number that fails the Luhn check is not
+  labeled `<CREDIT_CARD>`, and other detectors decide how much of it is
+  redacted. `4532-1234-5678-9012` becomes `<DATE_TIME>`, but
+  `4111 1111 1111 1112` keeps its first eight digits. If your code acts on
+  placeholder names, check them against your own data.
 - Street addresses are found only after a label such as `Address:` or
   `Mail to`.
 - In screenshots, text that Tesseract can't read is not redacted.
@@ -225,7 +230,7 @@ review steps around it.
 git clone https://github.com/OpenAdaptAI/openadapt-privacy
 cd openadapt-privacy
 uv sync --extra dev --extra presidio
-uv pip install pip
+uv pip install pip    # spacy download installs the model with pip
 uv run python -m spacy download en_core_web_sm
 uv run pytest
 ```

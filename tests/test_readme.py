@@ -157,3 +157,16 @@ def test_recording_example_is_what_recording_scrub_returns(scrubber) -> None:
     scrubbed = recording.scrub(scrubber)
     assert scrubbed.task_description == "Send email to <PERSON> at <EMAIL_ADDRESS>"
     assert f"# {scrubbed.task_description!r}" in README
+
+
+@needs_model
+def test_luhn_limit_examples_are_what_the_scrubber_returns(scrubber) -> None:
+    limits = _section(README, "Limits")
+    assert "`4532-1234-5678-9012` becomes `<DATE_TIME>`" in limits
+    assert "`4111 1111 1111 1112` keeps its first eight digits" in limits
+
+    assert scrubber.scrub_text("4532-1234-5678-9012") == "<DATE_TIME>"
+    partial = scrubber.scrub_text("4111 1111 1111 1112")
+    assert partial.startswith("4111 1111 ")
+    assert "1111 1112" not in partial
+    assert "<CREDIT_CARD>" not in partial
