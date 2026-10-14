@@ -293,7 +293,17 @@ def self_test() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="openadapt-privacy-scan",
+        description=(
+            "Scan a git tree for health-data identifiers, remote-desktop hostnames, "
+            "UNC paths, and recording, screenshot, or database files."
+        ),
+        epilog=(
+            "Exit status: 0 clean, 1 a rule fired or a file couldn't be read, "
+            "2 the scan couldn't run."
+        ),
+    )
     parser.add_argument(
         "--self-test",
         action="store_true",
