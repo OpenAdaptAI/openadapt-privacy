@@ -55,6 +55,9 @@ _STATISTICAL_ENTITIES = frozenset(
 # "Email: ..." as "<PERSON>: ...". A label is not an identifier, and keeping it
 # keeps the scrubbed text readable. Only a label that directly precedes another
 # finding is kept, so the identifier it introduces is still redacted.
+# Leave out a label that is also a surname, such as "Ip" or "Sin": in
+# "Dr. Sin: 555-123-4567" the name must stay redacted. Their longer forms
+# ("IP address", "social insurance number") are listed.
 _FIELD_LABELS = frozenset(
     {
         "address",
@@ -64,14 +67,12 @@ _FIELD_LABELS = frozenset(
         "email",
         "email address",
         "health card",
-        "ip",
         "ip address",
         "member id",
         "mrn",
         "name",
         "patient id",
         "phone",
-        "sin",
         "social insurance number",
         "social security number",
         "ssn",
