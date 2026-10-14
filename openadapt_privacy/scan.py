@@ -216,7 +216,7 @@ def scan_contents(root: Path, files: list[Path]) -> list[str]:
 
 
 def scan_tree(root: Path, files: list[Path] | None = None) -> list[str]:
-    """Return the same hit lines the clinic git scanner printed.
+    """Return one tab-separated line per hit, starting with the rule ID.
 
     Raise ``OSError`` if ``root`` is missing, is not a directory, or has a
     directory that can't be listed.
@@ -296,8 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="openadapt-privacy-scan",
         description=(
-            "Scan a git tree for health-data identifiers, remote-desktop hostnames, "
-            "UNC paths, and recording, screenshot, or database files."
+            "Scan the files in a directory for health-data identifiers, remote-desktop "
+            "hostnames, UNC paths, and recording, screenshot, or database files."
         ),
         epilog=(
             "Exit status: 0 clean, 1 a rule fired or a file couldn't be read, "
@@ -354,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     hits = scan_tree(root, files)
     if hits:
-        print("PHI / clinic-path scan failed:", file=sys.stderr)
+        print("PHI scan failed:", file=sys.stderr)
         for hit in hits:
             print(hit, file=sys.stderr)
         return 1

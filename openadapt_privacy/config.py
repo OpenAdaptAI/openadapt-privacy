@@ -1,8 +1,8 @@
 """Configuration for privacy scrubbing.
 
 This module provides configuration settings for PII/PHI scrubbing operations.
-Settings can be customized by creating a new PrivacyConfig instance or modifying
-the global `config` instance.
+Change settings on the module-level `config` instance. The scrubbers read that
+instance; a separate PrivacyConfig you create is not used.
 """
 
 from __future__ import annotations
